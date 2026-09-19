@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Office Gateway Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  /* Colour tokens: validated categorical palette, slots 1/2/3 in their
+     fixed order (blue, orange, aqua) - one hue per chart, never cycled.
+     Light values first; dark values override under the media query and
+     the data-theme scope, per the standard pattern. */
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6; /* latency chart */
+    --series-2:       #eb6834; /* drops/sec chart */
+    --series-3:       #1baf7a; /* CPU% chart */
+    --status-good:    #0ca30c;
+    --status-critical:#d03b3b;
+    --status-warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --status-good:    #0ca30c;
+      --status-critical:#e66767;
+      --status-warning: #fab219;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); margin: 0 0 20px; font-size: 0.9rem; }
+
+  .charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .card h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+  }
+  .card canvas { max-height: 160px; }
+
+  .tables {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 12px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--gridline);
+    color: var(--text-primary);
+  }
+  th { color: var(--text-muted); font-weight: 600; }
+  .empty-note { color: var(--text-muted); padding: 8px; font-size: 0.85rem; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .badge-pass { color: var(--status-good); border: 1px solid var(--status-good); }
+  .badge-drop { color: var(--status-critical); border: 1px solid var(--status-critical); }
+  .badge-high { color: var(--status-warning); border: 1px solid var(--status-warning); }
+  .badge-normal { color: var(--text-muted); border: 1px solid var(--baseline); }
+
+  /* KPI stat tiles: a hero number is its own chart form for a single
+     running total - no line/bar needed, per the "is it even a chart?"
+     check. */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi .value {
+    font-size: 1.7rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .label { color: var(--text-secondary); font-size: 0.8rem; margin-top: 2px; }
+
+  /* Device cards: each device keeps one fixed colour (its "slot") in
+     every place it appears on the page - the left accent bar here is
+     the only decorative use of that colour; the name/IP/counts stay in
+     ordinary text ink, per "text wears text tokens, never the series
+     colour". */
+  .devices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .device-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--device-color, var(--baseline));
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .device-card h3 { margin: 0 0 4px; font-size: 0.95rem; }
+  .device-card .mac { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 8px; }
+  .device-card .row { display: flex; justify-content: space-between; font-size: 0.85rem; margin: 2px 0; }
+  .device-card .row .k { color: var(--text-secondary); }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .status-online { background: var(--status-good); }
+  .status-offline { background: var(--status-critical); }
+</style>
+</head>
+<body>
+
+<h1>Smart Office Gateway - Live Monitoring</h1>
+<p class="subtitle">Kernel-level device authentication, rate limiting and MQTT priority - refreshes every 2 seconds.</p>
+
+<div class="kpis">
+  <div class="card kpi"><div class="value" id="kpi-pass">0</div><div class="label">Packets allowed</div></div>
+  <div class="card kpi"><div class="value" id="kpi-drop">0</div><div class="label">Packets dropped</div></div>
+  <div class="card kpi"><div class="value" id="kpi-trusted">0 / 0</div><div class="label">Trusted devices online</div></div>
+  <div class="card kpi"><div class="value" id="kpi-uptime">0s</div><div class="label">Daemon uptime</div></div>
+</div>
+
+<div class="devices" id="devices-row"></div>
+
+<div class="charts">
+  <div class="card">
+    <h2>Fire-alert pipeline latency (placeholder)</h2>
+    <canvas id="chart-latency"></canvas>
+  </div>
+  <div class="card">
+    <h2>Dropped packets / sec</h2>
+    <canvas id="chart-drops"></canvas>
+  </div>
+  <div class="card">
+    <h2>Gateway CPU utilisation (%)</h2>
+    <canvas id="chart-cpu"></canvas>
+  </div>
+  <div class="card">
+    <h2>Drops by reason (session total)</h2>
+    <canvas id="chart-reasons"></canvas>
+  </div>
+</div>
+
+<div class="tables">
+  <div class="card">
+    <h2>Live kernel event log</h2>
+    <table id="events-table">
+      <thead>
+        <tr><th>Time</th><th>Device (MAC)</th><th>Verdict</th><th>Reason</th><th>Priority</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty-note" id="events-empty" style="display:none;">No events yet - waiting for kernel traffic.</div>
+  </div>
+
+  <div class="card">
+    <h2>MQTT message log</h2>
+    <table id="mqtt-table">
+      <thead>
+        <tr><th>Time</th><th>Topic</th><th>Payload</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty-note" id="mqtt-empty" style="display:none;">No MQTT broker connected yet.</div>
+  </div>
+</div>
+
+<script>
+// One shared config for all three charts: no legend (a single series
+// names itself via the card title), thin 2px line, recessive gridlines
+// pulled from our CSS variables, and the default tooltip left on so
+// hovering a point shows its exact value - the "hover layer by default"
+// rule for any interactive chart.
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function makeLineChart(canvasId, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      data: [],
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.15,
+    }] },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: cssVar('--text-muted'), maxTicksLimit: 6 },
+             grid: { color: cssVar('--gridline') } },
+        y: { beginAtZero: true, ticks: { color: cssVar('--text-muted') },
+             grid: { color: cssVar('--gridline') } },
+      },
+    },
+  });
+}
+
+const latencyChart = makeLineChart('chart-latency', cssVar('--series-1'));
+const dropsChart = makeLineChart('chart-drops', cssVar('--series-2'));
+const cpuChart = makeLineChart('chart-cpu', cssVar('--series-3'));
+
+// Bar chart for the drop-reason breakdown. All three bars use ONE hue
+// (the reserved "critical" status colour) because every bar here means
+// the same thing - a drop - just split by reason; the axis labels
+// already carry the identity, so a competing categorical colour per bar
+// would only add noise (see color-formula.md: sequential/one-hue for a
+// single-meaning magnitude comparison).
+const reasonsChart = new Chart(document.getElementById('chart-reasons').getContext('2d'), {
+  type: 'bar',
+  data: { labels: [], datasets: [{ data: [], backgroundColor: cssVar('--status-critical') }] },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { beginAtZero: true, ticks: { color: cssVar('--text-muted'), precision: 0 },
+           grid: { color: cssVar('--gridline') } },
+      y: { ticks: { color: cssVar('--text-primary') }, grid: { display: false } },
+    },
+  },
+});
+
+// Device colour follows its role/"slot" number everywhere it appears
+// (accent bar on its card here, and consistently if it's ever plotted
+// on a chart) - identity stays tied to one colour across the page.
+const slotColor = (slot) => cssVar(`--series-${slot}`);
+
+function updateChart(chart, series) {
+  chart.data.labels = series.map(p => new Date(p.time * 1000).toLocaleTimeString());
+  chart.data.datasets[0].data = series.map(p => p.value);
+  chart.update('none'); // 'none' = redraw without replaying the entry animation
+}
+
+function verdictBadge(verdict) {
+  const cls = verdict === 'PASS' ? 'badge-pass' : 'badge-drop';
+  const icon = verdict === 'PASS' ? '✓' : '✕'; // check / cross - icon + label, not colour alone
+  return `<span class="badge ${cls}">${icon} ${verdict}</span>`;
+}
+
+function priorityBadge(priority) {
+  return priority === 1
+    ? '<span class="badge badge-high">⚡ HIGH</span>'
+    : '<span class="badge badge-normal">normal</span>';
+}
+
+function fmtTime(t) {
+  return new Date(t * 1000).toLocaleTimeString();
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function fmtAgo(t) {
+  if (t === null) return 'never';
+  const secAgo = Math.max(0, Math.floor(Date.now() / 1000 - t));
+  return secAgo < 60 ? `${secAgo}s ago` : `${Math.floor(secAgo / 60)}m ago`;
+}
+
+function renderDevices(devices) {
+  const row = document.getElementById('devices-row');
+  row.innerHTML = devices.map(d => `
+    <div class="device-card" style="--device-color: ${slotColor(d.slot)}">
+      <h3>${d.name}</h3>
+      <div class="mac">${d.mac}</div>
+      <div class="row"><span class="k">Status</span>
+        <span><span class="status-dot ${d.leased ? 'status-online' : 'status-offline'}"></span>${d.leased ? 'leased' : 'no lease'}</span>
+      </div>
+      <div class="row"><span class="k">IP</span><span>${d.ip || '—'}</span></div>
+      <div class="row"><span class="k">Allowed</span><span>${d.pass_count}</span></div>
+      <div class="row"><span class="k">Dropped</span><span>${d.drop_count}</span></div>
+      <div class="row"><span class="k">Last seen</span><span>${fmtAgo(d.last_seen)}</span></div>
+    </div>`).join('');
+}
+
+async function refresh() {
+  const res = await fetch('/api/state');
+  const state = await res.json();
+
+  updateChart(latencyChart, state.latency_series);
+  updateChart(dropsChart, state.drop_rate_series);
+  updateChart(cpuChart, state.cpu_series);
+
+  reasonsChart.data.labels = Object.keys(state.drop_reasons);
+  reasonsChart.data.datasets[0].data = Object.values(state.drop_reasons);
+  reasonsChart.update('none');
+
+  document.getElementById('kpi-pass').textContent = state.totals.pass;
+  document.getElementById('kpi-drop').textContent = state.totals.drop;
+  document.getElementById('kpi-trusted').textContent =
+    `${state.totals.trusted_online} / ${state.totals.trusted_total}`;
+  document.getElementById('kpi-uptime').textContent = fmtUptime(state.totals.uptime_sec);
+
+  renderDevices(state.devices);
+
+  const eventsBody = document.querySelector('#events-table tbody');
+  eventsBody.innerHTML = state.events.map(e => `
+    <tr>
+      <td>${fmtTime(e.time)}</td>
+      <td>${e.mac}</td>
+      <td>${verdictBadge(e.verdict)}</td>
+      <td>${e.reason}</td>
+      <td>${priorityBadge(e.priority)}</td>
+    </tr>`).join('');
+  document.getElementById('events-empty').style.display = state.events.length ? 'none' : 'block';
+
+  const mqttBody = document.querySelector('#mqtt-table tbody');
+  mqttBody.innerHTML = state.mqtt_log.map(m => `
+    <tr>
+      <td>${fmtTime(m.time)}</td>
+      <td>${m.topic}</td>
+      <td>${m.payload}</td>
+    </tr>`).join('');
+  document.getElementById('mqtt-empty').style.display = state.mqtt_log.length ? 'none' : 'block';
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+
+</body>
+</html>
