@@ -50,7 +50,12 @@ Prerequisites
 Run:
 
   sudo apt update
-  sudo apt install python3-bpfcc bpfcc-tools linux-headers-$(uname -r) python3-flask python3-psutil python3-paho-mqtt bpftool
+  sudo apt install python3-bpfcc bpfcc-tools linux-headers-$(uname -r) python3-flask python3-psutil python3-paho-mqtt linux-tools-common
+
+Note: bpftool itself is a virtual package on Ubuntu - installing it
+directly by that name fails. linux-tools-common is what actually
+provides a working bpftool binary, confirmed on a real Ubuntu 24.04
+machine.
 
 2. Point the scripts at your real interface
 --------------------------------------------
