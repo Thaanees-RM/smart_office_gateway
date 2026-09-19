@@ -1,0 +1,6 @@
+# bcc/python3-bpfcc is deliberately NOT listed here - it must come from
+# apt (sudo apt install python3-bpfcc), not pip, and must be used with
+# the system python3, not a venv - see README.md.
+Flask>=3.0
+psutil>=5.9
+paho-mqtt>=2.0
