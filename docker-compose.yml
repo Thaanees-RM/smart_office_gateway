@@ -1,0 +1,34 @@
+# Running this needs privileges that Docker doesn't remove, only moves -
+# see the comments on each setting below before assuming this "just
+# works" on any machine.
+services:
+  gateway-dashboard:
+    build: .
+    network_mode: host
+    # XDP attaches to a real interface on the HOST's network stack, so
+    # the container needs to see host interfaces directly rather than
+    # Docker's own virtual bridge network.
+
+    privileged: true
+    # Loading and attaching an eBPF/XDP program needs elevated kernel
+    # access. On newer kernels, a narrower set (cap_add: [BPF, SYS_ADMIN,
+    # NET_ADMIN]) may work instead of full --privileged - untested here,
+    # start with privileged and narrow it down once it's confirmed working.
+
+    volumes:
+      - /usr/src:/usr/src:ro
+      - /lib/modules:/lib/modules:ro
+      # Kernel headers bcc compiles xdp_filter.c against - these must be
+      # the HOST's headers, matching the HOST's running kernel, not
+      # anything installed inside the image.
+      - /sys/kernel/debug:/sys/kernel/debug:rw
+      - /var/lib/misc/dnsmasq.leases:/var/lib/misc/dnsmasq.leases:ro
+      # dnsmasq itself runs on the host, not in this container - this
+      # mounts its lease file in read-only so the daemon can read it.
+
+    environment:
+      IFACE: eth1
+      MQTT_BROKER_HOST: 127.0.0.1
+      LEASE_FILE: /var/lib/misc/dnsmasq.leases
+
+    restart: unless-stopped

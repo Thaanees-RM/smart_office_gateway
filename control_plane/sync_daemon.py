@@ -16,9 +16,11 @@
 # privileges) and the bcc package: on Ubuntu, `sudo apt install
 # python3-bpfcc bpfcc-tools linux-headers-$(uname -r)`.
 #
-# Not yet run against a real kernel/bcc install in the environment this
-# was written in - see the comments in xdp_filter.c about possible
-# version differences in the ring-buffer API.
+# The bcc API calls this file uses (attach_xdp, remove_xdp,
+# BPF_RINGBUF_OUTPUT, Key/Leaf) have been checked against a real
+# installed bcc 0.29.1 on Ubuntu 24.04 and all exist as used - see the
+# project README for how that was verified. Actually attaching to a live
+# interface and exercising real traffic has NOT been done yet.
 
 import ctypes as ct
 import os
@@ -32,8 +34,10 @@ from bcc import BPF
 # --- Configuration ------------------------------------------------------
 
 # The gateway's IoT-facing network interface. Find yours with `ip link
-# show` and change this to match.
-IFACE = "eth1"
+# show`. Overridable via the IFACE environment variable so a Docker
+# container or CI runner doesn't need this file edited to point at a
+# different interface.
+IFACE = os.environ.get("IFACE", "eth1")
 
 # Every ESP32 allowed onto the network, keyed by its MAC address.
 # "role" is a label for now (1=fire, 2=door, 3=env) - priority is
@@ -47,9 +51,12 @@ ENROLLED_REGISTRY = {
 
 # Must match HIGH_PRIORITY_PORT in xdp_filter.c, and the fire node's
 # publish port / mosquitto.conf listener.
-HIGH_PRIORITY_PORT = 18830
+HIGH_PRIORITY_PORT = int(os.environ.get("HIGH_PRIORITY_PORT", "18830"))
 
-LEASE_FILE = "/var/lib/misc/dnsmasq.leases"
+# In Docker this path is expected to be a volume mount of the real
+# dnsmasq.leases file from the host, since dnsmasq itself runs on the
+# host, not in this container.
+LEASE_FILE = os.environ.get("LEASE_FILE", "/var/lib/misc/dnsmasq.leases")
 SYNC_INTERVAL_SEC = 5
 XDP_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ebpf", "xdp_filter.c")
 

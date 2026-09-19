@@ -22,10 +22,12 @@
 # Then open http://<gateway-ip>:5000 from a machine on the OFFICE
 # network (not the isolated IoT subnet).
 #
-# Not yet run against a real kernel/bcc/Mosquitto setup - see the caveats
-# already noted in xdp_filter.c and sync_daemon.py, plus the latency
-# note below.
+# The bcc calls this file relies on (via sync_daemon.py) were checked
+# against a real installed bcc 0.29.1 on Ubuntu 24.04 - see the project
+# README. Actually attaching to a live interface with real traffic, and
+# a real Mosquitto broker, have NOT been tested yet.
 
+import os
 import threading
 import time
 from collections import deque
@@ -43,8 +45,11 @@ except ImportError:
 
 # --- Configuration --------------------------------------------------------
 
-MQTT_BROKER_HOST = "127.0.0.1"  # Mosquitto is expected to run on the gateway itself
-MQTT_BROKER_PORT = 1883
+# In Docker Compose, Mosquitto would be a separate service reachable by
+# its service name (e.g. "mosquitto"), not "127.0.0.1" - overridable
+# via environment variables for exactly that reason.
+MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "127.0.0.1")
+MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
 SERIES_LENGTH = 120   # ~2 minutes of history at 1 sample/sec, per chart
 EVENT_LOG_LENGTH = 200
 MQTT_LOG_LENGTH = 100

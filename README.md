@@ -209,6 +209,61 @@ installed bcc version may not support ring buffers; see the fallback note
 (switch to BPF_PERF_OUTPUT, perf_submit, open_perf_buffer) at the top of
 ebpf/xdp_filter.c.
 
+Docker
+----------
+
+A Dockerfile and docker-compose.yml are provided to package the dashboard
+and its dependencies (bcc, flask, psutil, paho-mqtt) so they don't need to
+be installed on the host by hand. Read the comments in both files before
+using them - a few things are non-negotiable:
+
+- bcc compiles xdp_filter.c against the HOST's running kernel, not the
+  container's. Kernel headers are bind-mounted in from the host
+  (/usr/src, /lib/modules) - there is no way to bake "the right" headers
+  into the image at build time, since the image doesn't know in advance
+  which host it will run on.
+- Attaching XDP to a real interface needs the container to see host
+  interfaces directly (network_mode: host) and elevated privileges
+  (privileged: true, or a narrower capability set once that's confirmed
+  to work).
+- dnsmasq itself is expected to run on the host, not in this container -
+  its lease file is bind-mounted in read-only.
+
+Build and run:
+
+  docker compose up --build
+
+I could not verify the image actually builds on this development
+machine - even a bare ubuntu:24.04 container gets a 403 Forbidden from
+Ubuntu's package mirrors here, while the host's own apt works fine, which
+points to a pre-existing Docker networking issue on that machine, not a
+problem with the Dockerfile. Try the build on the actual gateway laptop,
+or check the docker-build job in CI (below), before assuming it doesn't
+work.
+
+CI pipeline
+----------------
+
+.github/workflows/ci.yml runs three jobs on every push and pull request
+to main:
+
+1. python-syntax - compiles both control_plane scripts, catches typos
+   and syntax errors in seconds.
+2. docker-build - builds the Docker image, to confirm it still builds as
+   the code changes.
+3. ebpf-verifier-check - installs bcc on the CI runner and loads
+   xdp_filter.c (compile plus eBPF verifier check only, no interface
+   attach), so a change that breaks verification is caught automatically.
+   This job is marked continue-on-error, since eBPF program loading on a
+   shared CI runner is inherently less predictable than the two jobs
+   above - treat a failure here as worth investigating, not as a hard
+   block on merging.
+
+I have not seen this workflow actually run on GitHub - check the Actions
+tab after pushing to confirm all three jobs behave as expected, and
+report back if ebpf-verifier-check fails so it can be adjusted or
+removed rather than left silently red.
+
 Known limitations to state plainly in the report
 ------------------------------------------------------
 
