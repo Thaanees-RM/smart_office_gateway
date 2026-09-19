@@ -16,7 +16,19 @@
 // the Python side's open_ring_buffer()/ring_buffer_poll() calls become
 // open_perf_buffer()/perf_buffer_poll() instead.
 
-#include <linux/bpf.h>
+// Deliberately does NOT include <linux/bpf.h> here: BCC's own
+// compilation pipeline already provides struct xdp_md, XDP_PASS/
+// XDP_DROP, and every BPF helper/map macro this file uses, through its
+// own internal preamble - this file never needed to include it directly.
+// Removing it does NOT fix the CI/verifier-check failure some kernels
+// hit, though: BCC's own preamble pulls in the real kernel's
+// <linux/bpf.h> regardless, and that failure (incomplete types like
+// struct bpf_wq, undeclared identifiers like BPF_LOAD_ACQ/BPF_F_CPU) is
+// bcc 0.29.1's clang front-end being too old to parse very recent
+// kernel BPF additions - a real upstream bcc/kernel-version gap, not
+// something fixable from this source file. See the README for the full
+// explanation and why the CI job stays best-effort (continue-on-error)
+// rather than being "fixed" here.
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>

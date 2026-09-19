@@ -264,10 +264,23 @@ to main:
    above - treat a failure here as worth investigating, not as a hard
    block on merging.
 
-I have not seen this workflow actually run on GitHub - check the Actions
-tab after pushing to confirm all three jobs behave as expected, and
-report back if ebpf-verifier-check fails so it can be adjusted or
-removed rather than left silently red.
+Update: ebpf-verifier-check has been confirmed failing on GitHub's own
+runner, and the cause has been diagnosed precisely (not guessed) by
+reproducing the exact same compile-and-load step locally and reading the
+real compiler output: bcc 0.29.1's bundled clang cannot parse the actual
+running kernel's own linux/bpf.h once that kernel is new enough to
+contain very recent additions (struct bpf_wq, BPF_LOAD_ACQ, BPF_F_CPU,
+and similar). This is not a bug in xdp_filter.c - the errors occur
+inside bcc's own compilation preamble, which pulls in the real kernel's
+header regardless of what this file includes, before this file's own
+code is even reached. It is a genuine version gap between the bcc
+package Ubuntu 24.04 ships and however new a kernel GitHub's runner
+happens to be on at build time - not something a source-code change can
+fix, and not under this project's control. This is exactly the class of
+instability the job was marked continue-on-error for. Treat a red
+ebpf-verifier-check as expected until a newer bcc package closes that
+gap, and rely on python-syntax and docker-build (both reliably green) as
+the real safety net.
 
 Known limitations to state plainly in the report
 ------------------------------------------------------
